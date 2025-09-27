@@ -1,23 +1,22 @@
+from datetime import datetime
 from io import BytesIO
-from time import time
 
-from ..exc import BadTimestamp
 from ..pipeline import Stage
 from ..varint import uleb128
 
 
-class Timestamper(Stage[bytes, bytes]):
-    def __init__(self, max_age: int):
-        self._max_age = max_age
+class _Timestamper(Stage[tuple[bytes, datetime], bytes]):
+    def forward(self, data: tuple[bytes, datetime]) -> bytes:
+        payload, ts = data
+        ts = int(ts.timestamp())
+        return b"".join((uleb128.encode(ts), payload))
 
-    def forward(self, data: bytes) -> bytes:
-        ts = int(time())
-        return b"".join((uleb128.encode(ts), data))
-
-    def inverse(self, data: bytes) -> bytes:
+    def inverse(self, data: bytes) -> tuple[bytes, datetime]:
         bio = BytesIO(data)
         ts, _ = uleb128.decode_reader(bio)
-        age = time() - ts
-        if age > self._max_age:
-            raise BadTimestamp
-        return bio.read()
+        ts = datetime.fromtimestamp(ts)
+        payload = bio.read()
+        return payload, ts
+
+
+Timestamper = _Timestamper()
